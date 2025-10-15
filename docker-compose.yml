@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   task-scheduler:
-    build: .
+    image: admibo/dotask:latest
     container_name: task-scheduler
     ports:
       - "5000:5000"
