@@ -1,0 +1,1333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>自动任务服务</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #0f172a;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 1px 1px 2px rgba(37, 99, 235, 0.1);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            background: rgba(255, 255, 255, 0.7);
+            color: #475569;
+            border: none;
+            padding: 12px 24px;
+            cursor: pointer;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+            border: 2px solid transparent;
+        }
+
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.9);
+            border-color: #60a5fa;
+        }
+
+        .tab.active {
+            background: #2563eb;
+            color: white;
+            border-color: #2563eb;
+        }
+
+        .content {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(37, 99, 235, 0.1);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .btn:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn-danger {
+            background: #ef4444;
+        }
+
+        .btn-danger:hover {
+            background: #dc2626;
+            box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+        }
+
+        .btn-success {
+            background: #10b981;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+
+        .form-group {
+            margin-bottom: 5px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #1e293b;
+            font-weight: 600;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: all 0.2s;
+            background: #ffffff;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+        }
+
+        textarea {
+            resize: vertical;
+            min-height: 300px;
+        }
+
+        .task-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .task-item {
+            background: #f8fafc;
+            padding: 15px 20px;
+            border-radius: 8px;
+            border-left: 4px solid #2563eb;
+            transition: all 0.2s;
+            border: 1px solid #e2e8f0;
+        }
+
+        .task-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.15);
+            background: #ffffff;
+        }
+
+        .task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .task-main-info {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex: 1;
+        }
+
+        .task-name {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
+            min-width: 150px;
+        }
+
+        .task-schedule-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            font-size: 13px;
+            color: #64748b;
+            font-weight: 500;
+        }
+
+        .task-schedule-info > span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .task-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .task-info {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+
+        .task-command {
+            background: #f1f5f9;
+            color: #334155;
+            padding: 10px 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+            border: 1px solid #cbd5e1;
+            margin-top: 8px;
+        }
+
+        .log-list {
+            display: grid;
+            gap: 15px;
+        }
+
+        .log-item {
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #64748b;
+            border: 1px solid #e2e8f0;
+        }
+
+        .log-item.error {
+            border-left-color: #ef4444;
+        }
+
+        .log-item.success {
+            border-left-color: #10b981;
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .log-output {
+            background: #f1f5f9;
+            color: #334155;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #cbd5e1;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            max-width: 900px;
+            width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-title {
+            font-size: 24px;
+            color: #0f172a;
+            font-weight: 700;
+        }
+
+        .close {
+            font-size: 28px;
+            cursor: pointer;
+            color: #64748b;
+            transition: color 0.2s;
+        }
+
+        .close:hover {
+            color: #ef4444;
+        }
+
+        .schedule-options {
+            display: none;
+            margin-top: 10px;
+        }
+
+        .schedule-options.active {
+            display: block;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .status-badge:hover {
+            transform: scale(1.05);
+        }
+
+        .status-enabled {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-enabled:hover {
+            background: #a7f3d0;
+        }
+
+        .status-disabled {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .status-disabled:hover {
+            background: #fecaca;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #94a3b8;
+        }
+
+        .empty-state h3 {
+            color: #475569;
+            font-weight: 600;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .filter-bar select {
+            width: auto;
+            min-width: 200px;
+        }
+
+        /* 开关按钮样式 */
+        .switch-container {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 52px;
+            height: 28px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #cbd5e1;
+            transition: .2s;
+            border-radius: 28px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 2px;
+            background-color: white;
+            transition: .2s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        input:checked + .slider {
+            background-color: #10b981;
+            border-color: #10b981;
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(24px);
+        }
+
+        .slider:hover {
+            box-shadow: 0 0 8px rgba(37, 99, 235, 0.3);
+        }
+
+        .switch-label {
+            font-weight: 600;
+            color: #475569;
+            user-select: none;
+        }
+
+        input:checked ~ .switch-label {
+            color: #10b981;
+        }
+
+        /* Toast 通知样式 */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            background: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            border-left: 4px solid #2563eb;
+            min-width: 300px;
+            max-width: 500px;
+            animation: slideIn 0.3s ease-out, slideOut 0.3s ease-in 2.7s;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            color: #1e293b;
+        }
+
+        .toast.success {
+            border-left-color: #10b981;
+        }
+
+        .toast.error {
+            border-left-color: #ef4444;
+        }
+
+        .toast.warning {
+            border-left-color: #f59e0b;
+        }
+
+        .toast.info {
+            border-left-color: #2563eb;
+        }
+
+        .toast-icon {
+            font-size: 20px;
+            flex-shrink: 0;
+        }
+
+        .toast.success .toast-icon {
+            color: #10b981;
+        }
+
+        .toast.error .toast-icon {
+            color: #ef4444;
+        }
+
+        .toast.warning .toast-icon {
+            color: #f59e0b;
+        }
+
+        .toast.info .toast-icon {
+            color: #2563eb;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+        }
+
+        /* 视图切换按钮样式 */
+        .view-toggle {
+            display: flex;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.7);
+            padding: 4px;
+            border-radius: 8px;
+            border: 2px solid #e2e8f0;
+        }
+
+        .view-toggle-btn {
+            background: transparent;
+            color: #475569;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+
+        .view-toggle-btn:hover {
+            background: rgba(255, 255, 255, 0.9);
+        }
+
+        .view-toggle-btn.active {
+            background: #2563eb;
+            color: white;
+        }
+
+        /* 按钮视图样式 */
+        .task-button-view {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+        }
+
+        .task-button {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white;
+            border: none;
+            padding: 20px;
+            border-radius: 12px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+            position: relative;
+            overflow: hidden;
+            text-align: center;
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .task-button:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(37, 99, 235, 0.35);
+        }
+
+        .task-button:active {
+            transform: translateY(-1px);
+        }
+
+        .task-button.disabled {
+            background: linear-gradient(135deg, #94a3b8 0%, #64748b 100%);
+            opacity: 0.75;
+        }
+
+        .task-button.disabled:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(148, 163, 184, 0.35);
+        }
+
+        .task-button-name {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .task-button-schedule {
+            font-size: 12px;
+            opacity: 0.9;
+            font-weight: 400;
+        }
+
+        .task-button-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .task-button-controls {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            display: flex;
+            gap: 4px;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .task-button:hover .task-button-controls {
+            opacity: 1;
+        }
+
+        .task-button-control {
+            background: rgba(255, 255, 255, 0.3);
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 11px;
+            transition: all 0.2s;
+        }
+
+        .task-button-control:hover {
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .view-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Toast 通知容器 -->
+    <div class="toast-container" id="toast-container"></div>
+
+    <div class="container">
+        <h1>⚡ 轻量级定时任务服务</h1>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('tasks')">任务管理</button>
+            <button class="tab" onclick="switchTab('logs')">执行日志</button>
+        </div>
+
+        <div class="content">
+            <!-- 任务管理 -->
+            <div id="tasks-tab" class="tab-content active">
+                <div class="view-controls">
+                    <div>
+                        <button class="btn" onclick="showCreateModal()">➕ 创建新任务</button>
+                    </div>
+                    <div class="view-toggle">
+                        <button class="view-toggle-btn active" id="view-list-btn" onclick="switchViewMode('list')">
+                            📋 列表视图
+                        </button>
+                        <button class="view-toggle-btn" id="view-button-btn" onclick="switchViewMode('button')">
+                            🎯 按钮视图
+                        </button>
+                    </div>
+                </div>
+                <div id="task-list" class="task-list"></div>
+            </div>
+
+            <!-- 执行日志 -->
+            <div id="logs-tab" class="tab-content">
+                <div class="filter-bar">
+                    <select id="log-task-filter" onchange="loadLogs()">
+                        <option value="">所有任务</option>
+                    </select>
+                    <button class="btn btn-danger" onclick="clearLogs()">清空日志</button>
+                </div>
+                <div id="log-list" class="log-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 创建/编辑任务模态框 -->
+    <div id="task-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title" id="modal-title">创建任务</h2>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            <form id="task-form" onsubmit="saveTask(event)">
+                <input type="hidden" id="task-id">
+                
+                <div class="form-group">
+                    <label>任务名称</label>
+                    <input type="text" id="task-name" required placeholder="例: 数据备份">
+                </div>
+
+                <div class="form-group">
+                    <label>执行命令</label>
+                    <textarea id="task-command" required placeholder="例: /bin/bash /path/to/script.sh"></textarea>
+                </div>
+
+                <div style="display: flex; gap: 30px;">
+                    <!-- 左列：调度类型和时间配置 -->
+                    <div style="flex: 1;">
+                        <div class="form-group">
+                            <label>调度类型</label>
+                            <select id="schedule-type" onchange="updateScheduleOptions()">
+                                <option value="cron">Cron表达式</option>
+                                <option value="daily">每天定时</option>
+                                <option value="interval">循环执行</option>
+                            </select>
+                        </div>
+
+                        <div id="cron-options" class="schedule-options active">
+                            <div class="form-group">
+                                <label>Cron表达式</label>
+                                <input type="text" id="cron-expression" placeholder="例: 0 2 * * * (每天凌晨2点)">
+                                <small style="color: #666; display: block; margin-top: 5px;">
+                                    格式: 分 时 日 月 星期 (例: 0 */2 * * * 表示每2小时执行)
+                                </small>
+                            </div>
+                        </div>
+
+                        <div id="daily-options" class="schedule-options">
+                            <div class="form-group">
+                                <label>时间</label>
+                                <input type="time" id="daily-time" value="02:00">
+                            </div>
+                        </div>
+
+                        <div id="interval-options" class="schedule-options">
+                            <div class="form-group">
+                                <label>间隔时间</label>
+                                <div style="display: flex; gap: 10px;">
+                                    <input type="number" id="interval-value" min="1" value="60" style="width: 100px;">
+                                    <select id="interval-unit" style="width: 150px;">
+                                        <option value="1">秒</option>
+                                        <option value="60" selected>分钟</option>
+                                        <option value="3600">小时</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 右列：启用状态和操作按钮 -->
+                    <div style="flex: 1; display: grid; flex-direction: column; justify-content: space-between;">
+                        <div class="form-group">
+                            <label style="margin-bottom: 8px;">启用状态</label>
+                            <div class="switch-container">
+                                <label class="switch">
+                                    <input type="checkbox" id="task-enabled" checked>
+                                    <span class="slider"></span>
+                                </label>
+                                <span class="switch-label" id="switch-label-text">已启用</span>
+                            </div>
+                        </div>
+
+                        <div  class="form-group">
+                            <button type="submit" class="btn">保存</button>
+                            <button type="button" class="btn" onclick="closeModal()" style="background: #64748b;">取消</button>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentEditId = null;
+        let currentViewMode = '{{ view_mode }}'; // 当前视图模式（从服务器获取）
+
+        // 显示 Toast 通知
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            
+            // 根据类型选择图标
+            const icons = {
+                success: '✓',
+                error: '✕',
+                warning: '⚠',
+                info: 'ℹ'
+            };
+            
+            toast.innerHTML = `
+                <span class="toast-icon">${icons[type] || icons.info}</span>
+                <span>${message}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            // 3秒后自动移除
+            setTimeout(() => {
+                toast.remove();
+            }, 3000);
+        }
+
+        // 切换标签页
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            event.target.classList.add('active');
+            document.getElementById(`${tab}-tab`).classList.add('active');
+            
+            if (tab === 'tasks') {
+                loadTasks();
+            } else if (tab === 'logs') {
+                loadLogs();
+            }
+        }
+
+        // 格式化下次执行时间（显示相对时间）
+        function formatNextRunTime(nextRunTime) {
+            if (!nextRunTime) return null;
+            
+            const now = new Date();
+            const next = new Date(nextRunTime);
+            const diffMs = next - now;
+            const diffMinutes = Math.floor(diffMs / 1000 / 60);
+            const diffHours = Math.floor(diffMinutes / 60);
+            const diffDays = Math.floor(diffHours / 24);
+            
+            let relativeTime = '';
+            if (diffMs < 0) {
+                relativeTime = '即将执行';
+            } else if (diffMinutes < 1) {
+                relativeTime = '不到1分钟后';
+            } else if (diffMinutes < 60) {
+                relativeTime = `${diffMinutes}分钟后`;
+            } else if (diffHours < 24) {
+                relativeTime = `${diffHours}小时后`;
+            } else {
+                relativeTime = `${diffDays}天后`;
+            }
+            
+            return `<span title="${nextRunTime}">${relativeTime} (${nextRunTime.substring(11, 19)})</span>`;
+        }
+
+        // 切换视图模式
+        async function switchViewMode(mode) {
+            currentViewMode = mode;
+            
+            // 更新按钮状态
+            document.getElementById('view-list-btn').classList.toggle('active', mode === 'list');
+            document.getElementById('view-button-btn').classList.toggle('active', mode === 'button');
+            
+            // 保存到数据库
+            try {
+                await fetch('/api/settings/view_mode', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({view_mode: mode})
+                });
+            } catch (error) {
+                console.error('保存视图模式失败:', error);
+            }
+            
+            // 重新渲染任务列表
+            loadTasks();
+        }
+
+        // 加载视图模式
+        async function loadViewMode() {
+            try {
+                const response = await fetch('/api/settings/view_mode');
+                const data = await response.json();
+                currentViewMode = data.view_mode || 'list';
+                
+                // 更新按钮状态
+                document.getElementById('view-list-btn').classList.toggle('active', currentViewMode === 'list');
+                document.getElementById('view-button-btn').classList.toggle('active', currentViewMode === 'button');
+            } catch (error) {
+                console.error('加载视图模式失败:', error);
+                currentViewMode = 'list';
+            }
+        }
+
+        // 加载任务列表
+        async function loadTasks() {
+            const response = await fetch('/api/tasks');
+            const tasks = await response.json();
+            
+            const taskList = document.getElementById('task-list');
+            
+            if (tasks.length === 0) {
+                taskList.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 60px;">📋</div>
+                        <h3>还没有任务</h3>
+                        <p>点击"创建新任务"按钮开始</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // 根据视图模式渲染不同的界面
+            if (currentViewMode === 'button') {
+                renderButtonView(tasks);
+            } else {
+                renderListView(tasks);
+            }
+        }
+
+        // 渲染按钮视图
+        function renderButtonView(tasks) {
+            const taskList = document.getElementById('task-list');
+            taskList.className = 'task-button-view';
+            
+            taskList.innerHTML = tasks.map(task => {
+                let scheduleText = '';
+                if (task.schedule_type === 'cron') {
+                    scheduleText = `${task.schedule_config.expression}`;
+                } else if (task.schedule_type === 'daily') {
+                    scheduleText = `${String(task.schedule_config.hour).padStart(2, '0')}:${String(task.schedule_config.minute).padStart(2, '0')}`;
+                } else if (task.schedule_type === 'interval') {
+                    const seconds = task.schedule_config.seconds;
+                    if (seconds < 60) {
+                        scheduleText = `${seconds}秒`;
+                    } else if (seconds < 3600) {
+                        scheduleText = `${seconds / 60}分钟`;
+                    } else {
+                        scheduleText = `${seconds / 3600}小时`;
+                    }
+                }
+                
+                return `
+                    <div class="task-button ${task.enabled ? '' : 'disabled'}" 
+                         onclick="runTask(${task.id})"
+                         title="${task.command}">
+                        ${task.enabled ? '' : '<span class="task-button-badge">已禁用</span>'}
+                        <div class="task-button-name">${task.name}</div>
+                        <div class="task-button-schedule">📅 ${scheduleText}</div>
+                        <div class="task-button-controls" onclick="event.stopPropagation()">
+                            <button class="task-button-control" onclick="viewTaskLogs(${task.id})" title="查看日志">📝</button>
+
+                            <button class="task-button-control" onclick="toggleTaskStatus(${task.id}, ${task.enabled})" title="${task.enabled ? '禁用' : '启用'}">
+                                ${task.enabled ? '⏸' : '▶'}
+                            </button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // 更新日志筛选器
+            updateLogFilter(tasks);
+        }
+
+        // 渲染列表视图
+        function renderListView(tasks) {
+            const taskList = document.getElementById('task-list');
+            taskList.className = 'task-list';
+            
+            taskList.innerHTML = tasks.map(task => {
+                let scheduleText = '';
+                if (task.schedule_type === 'cron') {
+                    scheduleText = `Cron: ${task.schedule_config.expression}`;
+                } else if (task.schedule_type === 'daily') {
+                    scheduleText = `每天 ${String(task.schedule_config.hour).padStart(2, '0')}:${String(task.schedule_config.minute).padStart(2, '0')}`;
+                } else if (task.schedule_type === 'interval') {
+                    const seconds = task.schedule_config.seconds;
+                    // 智能显示：优先使用整数表示
+                    if (seconds < 60 || seconds % 60 !== 0) {
+                        scheduleText = `每 ${seconds} 秒`;
+                    } else if (seconds < 3600 || seconds % 3600 !== 0) {
+                        scheduleText = `每 ${seconds / 60} 分钟`;
+                    } else {
+                        scheduleText = `每 ${seconds / 3600} 小时`;
+                    }
+                }
+                
+                // 判断是否即将执行（5分钟内）
+                let isImminent = false;
+                if (task.next_run_time) {
+                    const diffMs = new Date(task.next_run_time) - new Date();
+                    isImminent = diffMs > 0 && diffMs <= 5 * 60 * 1000;
+                }
+                
+                return `
+                    <div class="task-item" style="${isImminent ? 'border-left-color: #f59e0b;' : ''}">
+                        <div class="task-header">
+                            <div class="task-main-info">
+                                <div class="task-name">${task.name}</div>
+                                <div class="task-schedule-info">
+                                    <span>📅 ${scheduleText}</span>
+                                    <span>⏰ ${task.next_run_time ? formatNextRunTime(task.next_run_time) : (task.enabled ? '<span style="color: #f59e0b;">计算中...</span>' : '<span style="color: #94a3b8;">已禁用</span>')}</span>
+                                </div>
+                            </div>
+                            <div class="task-actions">
+                                <button class="status-badge ${task.enabled ? 'status-enabled' : 'status-disabled'}" 
+                                        onclick="toggleTaskStatus(${task.id}, ${task.enabled})"
+                                        title="点击切换启用/禁用状态">
+                                    ${task.enabled ? '✓ 启用' : '✗ 禁用'}
+                                </button>
+                                <button class="btn btn-sm btn-success" onclick="runTask(${task.id})">▶ 立即执行</button>
+                                <button class="btn btn-sm" onclick="editTask(${task.id})">✎ 编辑</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteTask(${task.id})">✕ 删除</button>
+                            </div>
+                        </div>
+                        <div class="task-command">${task.command}</div>
+                    </div>
+                `;
+            }).join('');
+
+            // 更新日志筛选器
+            updateLogFilter(tasks);
+        }
+
+        // 更新日志筛选器
+        function updateLogFilter(tasks) {
+            const filter = document.getElementById('log-task-filter');
+            filter.innerHTML = '<option value="">所有任务</option>' + 
+                tasks.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+        }
+
+        // 加载日志
+        async function loadLogs() {
+            const taskId = document.getElementById('log-task-filter').value;
+            const url = taskId ? `/api/logs?task_id=${taskId}` : '/api/logs';
+            
+            const response = await fetch(url);
+            const logs = await response.json();
+            
+            const logList = document.getElementById('log-list');
+            
+            if (logs.length === 0) {
+                logList.innerHTML = `
+                    <div class="empty-state">
+                        <div style="font-size: 60px;">📝</div>
+                        <h3>还没有执行日志</h3>
+                    </div>
+                `;
+                return;
+            }
+            
+            logList.innerHTML = logs.map(log => {
+                const status = log.exit_code === 0 ? 'success' : 'error';
+                const statusText = log.exit_code === 0 ? '✓ 成功' : `✗ 失败 (${log.exit_code})`;
+                
+                return `
+                    <div class="log-item ${status}">
+                        <div class="log-header">
+                            <div>
+                                <strong><a href="/log/${log.id}" target="_blank" style="color: #0f172a; text-decoration: none; border-bottom: 1px dashed #2563eb;" onmouseover="this.style.color='#2563eb'" onmouseout="this.style.color='#0f172a'">${log.task_name}</a></strong>
+                                <span class="status-badge status-${status === 'success' ? 'enabled' : 'disabled'}" 
+                                      style="margin-left: 10px;">${statusText}</span>
+                            </div>
+                            <div style="color: #666; font-size: 12px;">
+                                ${log.started_at}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 显示创建模态框
+        function showCreateModal() {
+            currentEditId = null;
+            document.getElementById('modal-title').textContent = '创建任务';
+            document.getElementById('task-form').reset();
+            document.getElementById('task-id').value = '';
+            document.getElementById('task-modal').classList.add('active');
+            updateSwitchLabel();
+        }
+
+        // 编辑任务
+        async function editTask(id) {
+            const response = await fetch('/api/tasks');
+            const tasks = await response.json();
+            const task = tasks.find(t => t.id === id);
+            
+            if (!task) return;
+            
+            currentEditId = id;
+            document.getElementById('modal-title').textContent = '编辑任务';
+            document.getElementById('task-id').value = task.id;
+            document.getElementById('task-name').value = task.name;
+            document.getElementById('task-command').value = task.command;
+            document.getElementById('schedule-type').value = task.schedule_type;
+            document.getElementById('task-enabled').checked = task.enabled;
+            
+            updateScheduleOptions();
+            
+            if (task.schedule_type === 'cron') {
+                document.getElementById('cron-expression').value = task.schedule_config.expression;
+            } else if (task.schedule_type === 'daily') {
+                const hour = String(task.schedule_config.hour).padStart(2, '0');
+                const minute = String(task.schedule_config.minute).padStart(2, '0');
+                document.getElementById('daily-time').value = `${hour}:${minute}`;
+            } else if (task.schedule_type === 'interval') {
+                const seconds = task.schedule_config.seconds;
+                // 智能选择单位：优先使用秒，然后分钟，最后小时
+                if (seconds < 60 || seconds % 60 !== 0) {
+                    // 小于60秒或不能被60整除，使用秒
+                    document.getElementById('interval-value').value = seconds;
+                    document.getElementById('interval-unit').value = '1';
+                } else if (seconds < 3600 || seconds % 3600 !== 0) {
+                    // 小于3600秒或不能被3600整除，使用分钟
+                    document.getElementById('interval-value').value = seconds / 60;
+                    document.getElementById('interval-unit').value = '60';
+                } else {
+                    // 使用小时
+                    document.getElementById('interval-value').value = seconds / 3600;
+                    document.getElementById('interval-unit').value = '3600';
+                }
+            }
+            
+            document.getElementById('task-modal').classList.add('active');
+            updateSwitchLabel();
+        }
+
+        // 保存任务
+        async function saveTask(event) {
+            event.preventDefault();
+            
+            const id = document.getElementById('task-id').value;
+            const name = document.getElementById('task-name').value;
+            const command = document.getElementById('task-command').value;
+            const scheduleType = document.getElementById('schedule-type').value;
+            const enabled = document.getElementById('task-enabled').checked;
+            
+            let scheduleConfig = {};
+            
+            if (scheduleType === 'cron') {
+                scheduleConfig.expression = document.getElementById('cron-expression').value;
+            } else if (scheduleType === 'daily') {
+                const time = document.getElementById('daily-time').value.split(':');
+                scheduleConfig.hour = parseInt(time[0]);
+                scheduleConfig.minute = parseInt(time[1]);
+            } else if (scheduleType === 'interval') {
+                const value = parseInt(document.getElementById('interval-value').value);
+                const unit = parseInt(document.getElementById('interval-unit').value);
+                scheduleConfig.seconds = value * unit;
+            }
+            
+            const data = {
+                name,
+                command,
+                schedule_type: scheduleType,
+                schedule_config: scheduleConfig,
+                enabled
+            };
+            
+            const url = id ? `/api/tasks/${id}` : '/api/tasks';
+            const method = id ? 'PUT' : 'POST';
+            
+            const response = await fetch(url, {
+                method,
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+            
+            if (response.ok) {
+                closeModal();
+                loadTasks();
+            }
+        }
+
+        // 删除任务
+        async function deleteTask(id) {
+            if (!confirm('确定要删除这个任务吗？')) return;
+            
+            await fetch(`/api/tasks/${id}`, {method: 'DELETE'});
+            loadTasks();
+        }
+
+        // 切换任务启用/禁用状态
+        async function toggleTaskStatus(id, currentEnabled) {
+            const newEnabled = !currentEnabled;
+            const statusText = newEnabled ? '启用' : '禁用';
+            
+            try {
+                const response = await fetch(`/api/tasks/${id}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({enabled: newEnabled})
+                });
+                
+                if (response.ok) {
+                    // 刷新任务列表
+                    loadTasks();
+                } else {
+                    alert(`${statusText}任务失败`);
+                }
+            } catch (error) {
+                alert(`${statusText}任务失败: ${error.message}`);
+            }
+        }
+
+        // 立即执行任务
+        async function runTask(id) {
+            await fetch(`/api/tasks/${id}/run`, {method: 'POST'});
+            showToast('任务已提交执行，请稍后查看日志', 'success');
+        }
+
+        // 查看任务日志
+        function viewTaskLogs(taskId) {
+            // 切换到日志标签页
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            // 激活日志标签页
+            document.querySelectorAll('.tab')[1].classList.add('active');
+            document.getElementById('logs-tab').classList.add('active');
+            
+            // 设置日志筛选器并加载日志
+            document.getElementById('log-task-filter').value = taskId;
+            loadLogs();
+        }
+
+        // 清空日志
+        async function clearLogs() {
+            if (!confirm('确定要清空日志吗？')) return;
+            
+            const taskId = document.getElementById('log-task-filter').value;
+            const url = taskId ? `/api/logs/clear?task_id=${taskId}` : '/api/logs/clear';
+            
+            await fetch(url, {method: 'POST'});
+            loadLogs();
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('task-modal').classList.remove('active');
+        }
+
+        // 更新调度选项
+        function updateScheduleOptions() {
+            const type = document.getElementById('schedule-type').value;
+            
+            document.querySelectorAll('.schedule-options').forEach(el => {
+                el.classList.remove('active');
+            });
+            
+            document.getElementById(`${type}-options`).classList.add('active');
+        }
+
+        // 更新开关文本
+        function updateSwitchLabel() {
+            const checkbox = document.getElementById('task-enabled');
+            const label = document.getElementById('switch-label-text');
+            if (checkbox.checked) {
+                label.textContent = '已启用';
+                label.style.color = '#10b981';
+            } else {
+                label.textContent = '已禁用';
+                label.style.color = '#ef4444';
+            }
+        }
+
+        // 监听开关变化
+        document.addEventListener('DOMContentLoaded', function() {
+            const checkbox = document.getElementById('task-enabled');
+            checkbox.addEventListener('change', updateSwitchLabel);
+        });
+
+        // 初始加载
+        async function init() {
+            // 更新视图按钮状态（使用从服务器获取的初始值）
+            document.getElementById('view-list-btn').classList.toggle('active', currentViewMode === 'list');
+            document.getElementById('view-button-btn').classList.toggle('active', currentViewMode === 'button');
+            
+            // 加载任务列表
+            loadTasks();
+        }
+        
+        init();
+        
+        // 每30秒自动刷新任务列表（更新下次执行时间）
+        setInterval(() => {
+            const currentTab = document.querySelector('.tab-content.active').id;
+            if (currentTab === 'tasks-tab') {
+                loadTasks();
+            }
+        }, 30000);
+    </script>
+</body>
+</html>
+

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>日志详情 - {{ log.task_name }}</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            color: #0f172a;
+            font-size: 2em;
+            font-weight: 700;
+        }
+
+        .back-btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            text-decoration: none;
+            display: inline-block;
+            transition: all 0.2s;
+        }
+
+        .back-btn:hover {
+            background: #1d4ed8;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+        }
+
+        .content {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 20px rgba(37, 99, 235, 0.1);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+        }
+
+        .log-section {
+            margin-bottom: 25px;
+        }
+
+        .log-section h2 {
+            color: #0f172a;
+            font-size: 1.2em;
+            font-weight: 700;
+            margin-bottom: 10px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+
+        .log-info {
+            display: grid;
+            gap: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            gap: 10px;
+        }
+
+        .info-label {
+            font-weight: 700;
+            color: #1e293b;
+            min-width: 120px;
+        }
+
+        .info-value {
+            color: #64748b;
+            flex: 1;
+            font-weight: 500;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-success {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
+        .status-error {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+
+        .command-box, .output-box {
+            background: #f1f5f9;
+            color: #334155;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            border: 1px solid #cbd5e1;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+
+        .output-box.error {
+            background: #fef2f2;
+            color: #dc2626;
+            border-color: #ef4444;
+        }
+
+        .empty-output {
+            color: #94a3b8;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📋 日志详情</h1>
+            <a href="/" class="back-btn">← 返回主页</a>
+        </div>
+
+        <div class="content">
+            <div class="log-section">
+                <h2>基本信息</h2>
+                <div class="log-info">
+                    <div class="info-item">
+                        <span class="info-label">任务名称：</span>
+                        <span class="info-value">{{ log.task_name }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">执行状态：</span>
+                        <span class="info-value">
+                            <span class="status-badge {{ 'status-success' if log.exit_code == 0 else 'status-error' }}">
+                                {{ '✓ 成功' if log.exit_code == 0 else '✗ 失败 (' + log.exit_code|string + ')' }}
+                            </span>
+                        </span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">开始时间：</span>
+                        <span class="info-value">{{ log.started_at }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">结束时间：</span>
+                        <span class="info-value">{{ log.finished_at }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">执行时长：</span>
+                        <span class="info-value">{{ duration }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="log-section">
+                <h2>执行命令</h2>
+                <div class="command-box">{{ log.command }}</div>
+            </div>
+
+            <div class="log-section">
+                <h2>标准输出</h2>
+                {% if log.output %}
+                <div class="output-box">{{ log.output }}</div>
+                {% else %}
+                <div class="output-box empty-output">无输出内容</div>
+                {% endif %}
+            </div>
+
+            {% if log.error %}
+            <div class="log-section">
+                <h2>错误输出</h2>
+                <div class="output-box error">{{ log.error }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>
+

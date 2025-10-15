@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  task-scheduler:
+    build: .
+    container_name: task-scheduler
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./:/app/
+    environment:
+      # 时区设置，可根据需要修改
+      - TIMEZONE=Asia/Shanghai
+      # Python 输出不缓冲
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped
+
