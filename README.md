@@ -1,7 +1,8 @@
 # 轻量级定时任务服务
 
 极简、高效的定时任务管理系统，Python + Flask + APScheduler 构建，支持 Docker 部署。
-
+效果图
+![](https://wework.qpic.cn/wwpic3az/273134_-eWZgPJsS7OxVHj_1761642911)
 ## ✨ 核心特性
 
 - 🚀 **极低资源占用** - 仅依赖 Flask、APScheduler、pytz 三个库，内存占用 ~50MB
