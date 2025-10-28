@@ -684,11 +684,220 @@
             align-items: center;
             margin-bottom: 20px;
         }
+
+        /* 实时日志窗口样式 */
+        .log-window {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+            z-index: 9999;
+            display: none;
+            flex-direction: column;
+            border: 2px solid #2563eb;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .log-window.show {
+            display: flex;
+        }
+
+        .log-window.minimized {
+            width: 350px !important;
+            height: 50px !important;
+        }
+
+        .log-window.normal {
+            width: 600px;
+            height: 400px;
+        }
+
+        .log-window.maximized {
+            width: 90vw;
+            height: 90vh;
+            bottom: 5vh;
+            right: 5vw;
+        }
+
+        .log-window-header {
+            background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+            color: white;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: move;
+            user-select: none;
+        }
+
+        .log-window-title {
+            font-weight: 600;
+            font-size: 14px;
+            flex: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .log-window-controls {
+            display: flex;
+            gap: 8px;
+        }
+
+        .log-window-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+
+        .log-window-btn:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .log-window-content {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .log-window.minimized .log-window-content {
+            display: none;
+        }
+
+        .log-line {
+            margin: 2px 0;
+            word-wrap: break-word;
+        }
+
+        .log-line.stderr {
+            color: #fca5a5;
+        }
+
+        .log-line.stdout {
+            color: #a5f3fc;
+        }
+
+        .log-line.info {
+            color: #86efac;
+        }
+
+        .log-line.error {
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .log-line.success {
+            color: #10b981;
+            font-weight: bold;
+        }
+
+        .log-window-footer {
+            padding: 8px 16px;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            font-size: 11px;
+            color: #64748b;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-window.minimized .log-window-footer {
+            display: none;
+        }
+
+        .log-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .log-status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 2s infinite;
+        }
+
+        .log-status-dot.finished {
+            background: #64748b;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .log-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .log-action-btn {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 10px;
+            transition: all 0.2s;
+        }
+
+        .log-action-btn:hover {
+            background: #1d4ed8;
+        }
     </style>
 </head>
 <body>
     <!-- Toast 通知容器 -->
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- 实时日志窗口 -->
+    <div class="log-window normal" id="log-window">
+        <div class="log-window-header" id="log-window-header">
+            <div class="log-window-title" id="log-window-title">执行日志</div>
+            <div class="log-window-controls">
+                <button class="log-window-btn" onclick="minimizeLogWindow()" title="最小化">−</button>
+                <button class="log-window-btn" onclick="toggleMaximizeLogWindow()" title="最大化/还原">□</button>
+                <button class="log-window-btn" onclick="closeLogWindow()" title="关闭">×</button>
+            </div>
+        </div>
+        <div class="log-window-content" id="log-window-content"></div>
+        <div class="log-window-footer">
+            <div class="log-status">
+                <div class="log-status-dot" id="log-status-dot"></div>
+                <span id="log-status-text">正在执行...</span>
+            </div>
+            <div class="log-actions">
+                <button class="log-action-btn" onclick="clearLogWindowContent()">清空</button>
+                <button class="log-action-btn" onclick="copyLogWindowContent()">复制</button>
+            </div>
+        </div>
+    </div>
 
     <div class="container">
         <h1>⚡ 轻量级定时任务服务</h1>
@@ -696,6 +905,11 @@
         <div class="tabs">
             <button class="tab active" onclick="switchTab('tasks')">任务管理</button>
             <button class="tab" onclick="switchTab('logs')">执行日志</button>
+            <button class="tab" onclick="showCommandModal()" style="background: #10b981; color: white; margin-left: auto;">⚡ 执行命令</button>
+            <button class="tab" onclick="showRunningTasksModal()" style="background: #f59e0b; color: white;">
+                🔄 运行中 <span id="running-count-badge" style="display: none; margin-left: 5px; background: rgba(255,255,255,0.3); padding: 2px 6px; border-radius: 10px; font-size: 11px;"></span>
+            </button>
+            <button class="tab" onclick="showSettingsModal()" style="background: #64748b; color: white;">⚙️ 设置</button>
         </div>
 
         <div class="content">
@@ -726,6 +940,86 @@
                     <button class="btn btn-danger" onclick="clearLogs()">清空日志</button>
                 </div>
                 <div id="log-list" class="log-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 运行中任务模态框 -->
+    <div id="running-tasks-modal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <div class="modal-header">
+                <h2 class="modal-title">🔄 运行中的任务</h2>
+                <span class="close" onclick="closeRunningTasksModal()">&times;</span>
+            </div>
+            <div id="running-tasks-list"></div>
+        </div>
+    </div>
+
+    <!-- 执行命令模态框 -->
+    <div id="command-modal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2 class="modal-title">⚡ 执行命令</h2>
+                <span class="close" onclick="closeCommandModal()">&times;</span>
+            </div>
+            <form id="command-form" onsubmit="executeCommand(event)">
+                <div class="form-group">
+                    <label>执行命令</label>
+                    <textarea id="command-input" required placeholder="输入要执行的命令，例如：
+echo 'Hello World'
+或
+for i in {1..5}; do echo &quot;处理第 $i 项&quot;; sleep 1; done" style="min-height: 150px;"></textarea>
+                    <small style="color: #666; display: block; margin-top: 5px;">
+                        💡 提示：此命令会立即执行并在实时日志窗口中显示输出，不会保存为任务
+                    </small>
+                </div>
+                
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-success">▶ 执行</button>
+                    <button type="button" class="btn" onclick="closeCommandModal()" style="background: #64748b;">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 设置模态框 -->
+    <div id="settings-modal" class="modal">
+        <div class="modal-content" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">⚙️ 设置</h2>
+                <span class="close" onclick="closeSettingsModal()">&times;</span>
+            </div>
+            <div>
+                <div class="form-group">
+                    <label>实时日志显示</label>
+                    <div class="switch-container">
+                        <label class="switch">
+                            <input type="checkbox" id="show-realtime-log-setting" onchange="updateShowRealtimeLogLabel()">
+                            <span class="slider"></span>
+                        </label>
+                        <span class="switch-label" id="show-realtime-log-label">开启</span>
+                    </div>
+                    <small style="color: #666; display: block; margin-top: 8px;">
+                        开启后，点击"立即执行"时会自动弹出实时日志窗口
+                    </small>
+                </div>
+
+                <div class="form-group" style="margin-top: 20px;">
+                    <label>任务超时时间（秒）</label>
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <input type="number" id="task-timeout-setting" min="60" max="86400" value="3600" 
+                               style="width: 150px;" oninput="updateTaskTimeoutLabel()">
+                        <span style="color: #64748b; font-size: 14px;" id="task-timeout-label">= 1 小时</span>
+                    </div>
+                    <small style="color: #666; display: block; margin-top: 8px;">
+                        任务执行超过此时间将被强制终止（范围：60秒 ~ 86400秒/24小时）
+                    </small>
+                </div>
+
+                <div style="margin-top: 20px; display: flex; gap: 10px;">
+                    <button class="btn" onclick="saveSettings()">保存</button>
+                    <button class="btn" onclick="closeSettingsModal()" style="background: #64748b;">取消</button>
+                </div>
             </div>
         </div>
     </div>
@@ -820,6 +1114,9 @@
     <script>
         let currentEditId = null;
         let currentViewMode = '{{ view_mode }}'; // 当前视图模式（从服务器获取）
+        let logEventSource = null; // SSE连接
+        let currentLogId = null; // 当前日志ID
+        let showRealtimeLog = true; // 是否自动显示实时日志
 
         // 显示 Toast 通知
         function showToast(message, type = 'success') {
@@ -1243,8 +1540,20 @@
 
         // 立即执行任务
         async function runTask(id) {
-            await fetch(`/api/tasks/${id}/run`, {method: 'POST'});
-            showToast('任务已提交执行，请稍后查看日志', 'success');
+            const response = await fetch(`/api/tasks/${id}/run`, {method: 'POST'});
+            const data = await response.json();
+            
+            if (data.execution_id) {
+                // 根据设置决定是否自动打开实时日志窗口
+                if (showRealtimeLog) {
+                    openLogWindow(data.execution_id);
+                    showToast('任务已提交执行', 'success');
+                } else {
+                    showToast('任务已提交执行，请稍后查看日志', 'info');
+                }
+            } else {
+                showToast('任务已提交执行，请稍后查看日志', 'success');
+            }
         }
 
         // 查看任务日志
@@ -1308,14 +1617,324 @@
             checkbox.addEventListener('change', updateSwitchLabel);
         });
 
+        // 显示运行中任务模态框
+        async function showRunningTasksModal() {
+            document.getElementById('running-tasks-modal').classList.add('active');
+            await loadRunningTasks();
+            
+            // 每2秒刷新一次运行中的任务列表
+            if (window.runningTasksInterval) {
+                clearInterval(window.runningTasksInterval);
+            }
+            window.runningTasksInterval = setInterval(loadRunningTasks, 2000);
+        }
+
+        // 关闭运行中任务模态框
+        function closeRunningTasksModal() {
+            document.getElementById('running-tasks-modal').classList.remove('active');
+            if (window.runningTasksInterval) {
+                clearInterval(window.runningTasksInterval);
+                window.runningTasksInterval = null;
+            }
+        }
+
+        // 加载运行中的任务列表
+        async function loadRunningTasks() {
+            try {
+                const response = await fetch('/api/running_tasks');
+                const tasks = await response.json();
+                
+                const listContainer = document.getElementById('running-tasks-list');
+                
+                if (tasks.length === 0) {
+                    listContainer.innerHTML = `
+                        <div class="empty-state" style="padding: 40px;">
+                            <div style="font-size: 50px;">💤</div>
+                            <h3>当前没有运行中的任务</h3>
+                            <p style="color: #64748b;">所有任务都已完成</p>
+                        </div>
+                    `;
+                    updateRunningCountBadge(0);
+                    return;
+                }
+                
+                updateRunningCountBadge(tasks.length);
+                
+                listContainer.innerHTML = '<div class="task-list">' + tasks.map(task => {
+                    const elapsed = task.elapsed_seconds;
+                    let elapsedText;
+                    if (elapsed < 60) {
+                        elapsedText = `${elapsed}秒`;
+                    } else if (elapsed < 3600) {
+                        elapsedText = `${Math.floor(elapsed / 60)}分${elapsed % 60}秒`;
+                    } else {
+                        const hours = Math.floor(elapsed / 3600);
+                        const minutes = Math.floor((elapsed % 3600) / 60);
+                        elapsedText = `${hours}小时${minutes}分`;
+                    }
+                    
+                    return `
+                        <div class="task-item" style="border-left-color: #f59e0b;">
+                            <div class="task-header">
+                                <div class="task-main-info">
+                                    <div class="task-name">${task.task_name}</div>
+                                    <div class="task-schedule-info">
+                                        <span>⏰ 开始时间: ${task.started_at}</span>
+                                        <span style="color: #f59e0b; font-weight: 600;">⏱️ 运行时长: ${elapsedText}</span>
+                                    </div>
+                                </div>
+                                <div class="task-actions">
+                                    <button class="btn btn-sm btn-success" onclick="viewRunningTaskLog('${task.execution_id}', '${task.task_name}')">
+                                        📺 查看日志
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" onclick="killRunningTask('${task.execution_id}', '${task.task_name}')">
+                                        🛑 强制终止
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('') + '</div>';
+            } catch (error) {
+                console.error('加载运行中任务失败:', error);
+            }
+        }
+
+        // 更新运行中任务数量徽章
+        function updateRunningCountBadge(count) {
+            const badge = document.getElementById('running-count-badge');
+            if (count > 0) {
+                badge.textContent = count;
+                badge.style.display = 'inline-block';
+            } else {
+                badge.style.display = 'none';
+            }
+        }
+
+        // 查看运行中任务的实时日志
+        function viewRunningTaskLog(executionId, taskName) {
+            // 打开实时日志窗口
+            openLogWindow(executionId);
+            // 可以选择保持运行中任务窗口打开，方便查看其他任务
+            // 如果希望关闭运行中任务窗口，取消下面这行的注释
+            // closeRunningTasksModal();
+        }
+
+        // 强制终止运行中的任务
+        async function killRunningTask(executionId, taskName) {
+            if (!confirm(`确定要强制终止任务"${taskName}"吗？\n\n⚠️ 警告：这将立即终止进程，可能导致数据丢失或不一致！`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/running_tasks/${executionId}/kill`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    showToast(`任务"${taskName}"已被强制终止`, 'success');
+                    // 立即刷新列表
+                    await loadRunningTasks();
+                } else {
+                    showToast(data.error || '终止失败', 'error');
+                }
+            } catch (error) {
+                showToast('终止失败: ' + error.message, 'error');
+            }
+        }
+
+        // 显示执行命令模态框
+        function showCommandModal() {
+            document.getElementById('command-input').value = '';
+            document.getElementById('command-modal').classList.add('active');
+        }
+
+        // 关闭执行命令模态框
+        function closeCommandModal() {
+            document.getElementById('command-modal').classList.remove('active');
+        }
+
+        // 执行命令
+        async function executeCommand(event) {
+            event.preventDefault();
+            
+            const command = document.getElementById('command-input').value.trim();
+            if (!command) {
+                showToast('请输入命令', 'warning');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/commands/run', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({command: command})
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.execution_id) {
+                    closeCommandModal();
+                    // 临时命令始终显示实时日志
+                    openLogWindow(data.execution_id);
+                    showToast('命令已提交执行', 'success');
+                } else {
+                    showToast(data.error || '执行失败', 'error');
+                }
+            } catch (error) {
+                showToast('执行失败: ' + error.message, 'error');
+            }
+        }
+
+        // 显示设置模态框
+        async function showSettingsModal() {
+            // 加载当前设置
+            try {
+                // 加载实时日志显示设置
+                const logResponse = await fetch('/api/settings/show_realtime_log');
+                const logData = await logResponse.json();
+                showRealtimeLog = logData.show_realtime_log;
+                
+                const checkbox = document.getElementById('show-realtime-log-setting');
+                checkbox.checked = showRealtimeLog;
+                updateShowRealtimeLogLabel();
+                
+                // 加载超时时间设置
+                const timeoutResponse = await fetch('/api/settings/task_timeout');
+                const timeoutData = await timeoutResponse.json();
+                
+                const timeoutInput = document.getElementById('task-timeout-setting');
+                timeoutInput.value = timeoutData.task_timeout;
+                updateTaskTimeoutLabel();
+                
+                document.getElementById('settings-modal').classList.add('active');
+            } catch (error) {
+                console.error('加载设置失败:', error);
+                document.getElementById('settings-modal').classList.add('active');
+            }
+        }
+
+        // 关闭设置模态框
+        function closeSettingsModal() {
+            document.getElementById('settings-modal').classList.remove('active');
+        }
+
+        // 保存设置
+        async function saveSettings() {
+            const checkbox = document.getElementById('show-realtime-log-setting');
+            showRealtimeLog = checkbox.checked;
+            
+            const timeoutInput = document.getElementById('task-timeout-setting');
+            const taskTimeout = parseInt(timeoutInput.value);
+            
+            // 验证超时时间
+            if (isNaN(taskTimeout) || taskTimeout < 60 || taskTimeout > 86400) {
+                showToast('超时时间必须在 60 ~ 86400 秒之间', 'warning');
+                return;
+            }
+            
+            try {
+                // 保存实时日志显示设置
+                await fetch('/api/settings/show_realtime_log', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({show_realtime_log: showRealtimeLog})
+                });
+                
+                // 保存超时时间设置
+                const timeoutResponse = await fetch('/api/settings/task_timeout', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({task_timeout: taskTimeout})
+                });
+                
+                const timeoutData = await timeoutResponse.json();
+                if (!timeoutResponse.ok) {
+                    showToast(timeoutData.error || '保存失败', 'error');
+                    return;
+                }
+                
+                closeSettingsModal();
+                showToast('设置已保存', 'success');
+            } catch (error) {
+                showToast('保存失败: ' + error.message, 'error');
+            }
+        }
+
+        // 更新实时日志显示标签
+        function updateShowRealtimeLogLabel() {
+            const checkbox = document.getElementById('show-realtime-log-setting');
+            const label = document.getElementById('show-realtime-log-label');
+            if (checkbox.checked) {
+                label.textContent = '开启';
+                label.style.color = '#10b981';
+            } else {
+                label.textContent = '关闭';
+                label.style.color = '#64748b';
+            }
+        }
+
+        // 更新超时时间标签
+        function updateTaskTimeoutLabel() {
+            const input = document.getElementById('task-timeout-setting');
+            const label = document.getElementById('task-timeout-label');
+            const seconds = parseInt(input.value) || 3600;
+            
+            if (seconds >= 3600) {
+                const hours = seconds / 3600;
+                if (hours === Math.floor(hours)) {
+                    label.textContent = `= ${hours} 小时`;
+                } else {
+                    label.textContent = `= ${hours.toFixed(1)} 小时`;
+                }
+            } else if (seconds >= 60) {
+                const minutes = seconds / 60;
+                if (minutes === Math.floor(minutes)) {
+                    label.textContent = `= ${minutes} 分钟`;
+                } else {
+                    label.textContent = `= ${minutes.toFixed(1)} 分钟`;
+                }
+            } else {
+                label.textContent = `= ${seconds} 秒`;
+            }
+        }
+
+        // 更新运行中任务数量（后台轮询）
+        async function updateRunningTasksCount() {
+            try {
+                const response = await fetch('/api/running_tasks');
+                const tasks = await response.json();
+                updateRunningCountBadge(tasks.length);
+            } catch (error) {
+                // 静默失败
+            }
+        }
+
         // 初始加载
         async function init() {
             // 更新视图按钮状态（使用从服务器获取的初始值）
             document.getElementById('view-list-btn').classList.toggle('active', currentViewMode === 'list');
             document.getElementById('view-button-btn').classList.toggle('active', currentViewMode === 'button');
             
+            // 加载实时日志显示设置
+            try {
+                const response = await fetch('/api/settings/show_realtime_log');
+                const data = await response.json();
+                showRealtimeLog = data.show_realtime_log;
+            } catch (error) {
+                console.error('加载设置失败:', error);
+            }
+            
             // 加载任务列表
             loadTasks();
+            
+            // 立即更新一次运行中任务数量
+            updateRunningTasksCount();
+            
+            // 每5秒更新一次运行中任务数量
+            setInterval(updateRunningTasksCount, 5000);
         }
         
         init();
@@ -1327,6 +1946,206 @@
                 loadTasks();
             }
         }, 30000);
+
+        // ===== 实时日志窗口控制函数 =====
+
+        // 打开日志窗口并连接SSE
+        function openLogWindow(executionId) {
+            const logWindow = document.getElementById('log-window');
+            const logContent = document.getElementById('log-window-content');
+            const logTitle = document.getElementById('log-window-title');
+            const logStatusText = document.getElementById('log-status-text');
+            const logStatusDot = document.getElementById('log-status-dot');
+            
+            // 清空之前的日志
+            logContent.innerHTML = '';
+            logTitle.textContent = '执行日志';
+            logStatusText.textContent = '正在执行...';
+            logStatusDot.classList.remove('finished');
+            
+            // 显示窗口
+            logWindow.classList.add('show');
+            logWindow.classList.remove('minimized');
+            
+            // 关闭之前的SSE连接
+            if (logEventSource) {
+                logEventSource.close();
+            }
+            
+            // 连接到SSE端点
+            logEventSource = new EventSource(`/api/tasks/${executionId}/stream`);
+            
+            logEventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'start') {
+                    logTitle.textContent = `${data.task_name} - 执行中`;
+                    appendLogLine(`[${data.started_at}] 开始执行任务`, 'info');
+                    appendLogLine(`命令: ${data.command}`, 'info');
+                    appendLogLine('', 'info');
+                } else if (data.type === 'log') {
+                    const lineClass = data.is_stderr ? 'stderr' : 'stdout';
+                    appendLogLine(data.data, lineClass);
+                } else if (data.type === 'finish') {
+                    appendLogLine('', 'info');
+                    const statusClass = data.exit_code === 0 ? 'success' : 'error';
+                    const statusText = data.exit_code === 0 ? '成功' : `失败 (退出码: ${data.exit_code})`;
+                    appendLogLine(`[${data.finished_at}] 任务执行${statusText}`, statusClass);
+                    
+                    // 更新状态
+                    logStatusText.textContent = `执行${statusText}`;
+                    logStatusDot.classList.add('finished');
+                    
+                    // 保存日志ID
+                    currentLogId = data.log_id;
+                    
+                    // 关闭连接
+                    if (logEventSource) {
+                        logEventSource.close();
+                        logEventSource = null;
+                    }
+                    
+                    // 刷新日志列表（如果在日志页面）
+                    const currentTab = document.querySelector('.tab-content.active').id;
+                    if (currentTab === 'logs-tab') {
+                        loadLogs();
+                    }
+                } else if (data.type === 'error') {
+                    appendLogLine(`错误: ${data.message}`, 'error');
+                    logStatusText.textContent = '执行失败';
+                    logStatusDot.classList.add('finished');
+                    
+                    if (logEventSource) {
+                        logEventSource.close();
+                        logEventSource = null;
+                    }
+                }
+            };
+            
+            logEventSource.onerror = function(error) {
+                console.error('SSE连接错误:', error);
+                appendLogLine('连接断开', 'error');
+                logStatusText.textContent = '连接断开';
+                logStatusDot.classList.add('finished');
+                
+                if (logEventSource) {
+                    logEventSource.close();
+                    logEventSource = null;
+                }
+            };
+        }
+
+        // 添加日志行
+        function appendLogLine(text, className = '') {
+            const logContent = document.getElementById('log-window-content');
+            const line = document.createElement('div');
+            line.className = `log-line ${className}`;
+            line.textContent = text;
+            logContent.appendChild(line);
+            
+            // 自动滚动到底部
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        // 关闭日志窗口
+        function closeLogWindow() {
+            const logWindow = document.getElementById('log-window');
+            logWindow.classList.remove('show');
+            
+            // 关闭SSE连接
+            if (logEventSource) {
+                logEventSource.close();
+                logEventSource = null;
+            }
+        }
+
+        // 最小化日志窗口
+        function minimizeLogWindow() {
+            const logWindow = document.getElementById('log-window');
+            if (logWindow.classList.contains('minimized')) {
+                logWindow.classList.remove('minimized');
+            } else {
+                logWindow.classList.add('minimized');
+                logWindow.classList.remove('maximized');
+            }
+        }
+
+        // 切换最大化/还原日志窗口
+        function toggleMaximizeLogWindow() {
+            const logWindow = document.getElementById('log-window');
+            if (logWindow.classList.contains('maximized')) {
+                logWindow.classList.remove('maximized');
+                logWindow.classList.add('normal');
+            } else {
+                logWindow.classList.remove('normal', 'minimized');
+                logWindow.classList.add('maximized');
+            }
+        }
+
+        // 清空日志窗口内容
+        function clearLogWindowContent() {
+            const logContent = document.getElementById('log-window-content');
+            logContent.innerHTML = '';
+        }
+
+        // 复制日志窗口内容
+        function copyLogWindowContent() {
+            const logContent = document.getElementById('log-window-content');
+            const text = logContent.innerText;
+            
+            navigator.clipboard.writeText(text).then(() => {
+                showToast('日志已复制到剪贴板', 'success');
+            }).catch(err => {
+                showToast('复制失败', 'error');
+            });
+        }
+
+        // 支持拖动日志窗口
+        (function() {
+            const logWindow = document.getElementById('log-window');
+            const header = document.getElementById('log-window-header');
+            let isDragging = false;
+            let currentX;
+            let currentY;
+            let initialX;
+            let initialY;
+            let xOffset = 0;
+            let yOffset = 0;
+
+            header.addEventListener('mousedown', dragStart);
+            document.addEventListener('mousemove', drag);
+            document.addEventListener('mouseup', dragEnd);
+
+            function dragStart(e) {
+                if (e.target === header || e.target.classList.contains('log-window-title')) {
+                    initialX = e.clientX - xOffset;
+                    initialY = e.clientY - yOffset;
+                    isDragging = true;
+                }
+            }
+
+            function drag(e) {
+                if (isDragging) {
+                    e.preventDefault();
+                    currentX = e.clientX - initialX;
+                    currentY = e.clientY - initialY;
+                    xOffset = currentX;
+                    yOffset = currentY;
+
+                    setTranslate(currentX, currentY, logWindow);
+                }
+            }
+
+            function dragEnd(e) {
+                initialX = currentX;
+                initialY = currentY;
+                isDragging = false;
+            }
+
+            function setTranslate(xPos, yPos, el) {
+                el.style.transform = `translate(${xPos}px, ${yPos}px)`;
+            }
+        })();
     </script>
 </body>
 </html>

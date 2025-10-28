@@ -10,12 +10,15 @@ import sqlite3
 import subprocess
 import json
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 import logging
 import pytz
+import threading
+import queue
+import time
 
 # 配置
 TASKS_DB_PATH = 'tasks.db'
@@ -43,6 +46,14 @@ except Exception as e:
 
 scheduler = BackgroundScheduler(timezone=timezone)
 scheduler.start()
+
+# 全局字典，用于存储运行中任务的日志队列
+running_tasks = {}
+running_tasks_lock = threading.Lock()
+
+# 存储运行中任务的进程对象
+running_processes = {}
+running_processes_lock = threading.Lock()
 
 
 def init_db():
@@ -80,6 +91,18 @@ def init_db():
         VALUES ('view_mode', 'list')
     ''')
     
+    # 设置默认实时日志显示开关
+    cursor_tasks.execute('''
+        INSERT OR IGNORE INTO settings (key, value)
+        VALUES ('show_realtime_log', '1')
+    ''')
+    
+    # 设置默认超时时间（秒）
+    cursor_tasks.execute('''
+        INSERT OR IGNORE INTO settings (key, value)
+        VALUES ('task_timeout', '3600')
+    ''')
+    
     conn_tasks.commit()
     conn_tasks.close()
     
@@ -106,35 +129,234 @@ def init_db():
     conn_logs.close()
 
 
-def execute_task(task_id, task_name, command):
-    """执行任务"""
+def get_task_timeout():
+    """获取全局任务超时时间（秒）"""
+    try:
+        conn = sqlite3.connect(TASKS_DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('SELECT value FROM settings WHERE key = ?', ('task_timeout',))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result:
+            return int(result[0])
+        return 3600  # 默认1小时
+    except:
+        return 3600  # 出错时使用默认值
+
+
+def execute_command_temp(command, execution_id):
+    """临时执行命令（不保存到数据库）"""
     started_at = datetime.now()
     
+    # 创建日志队列用于实时推送
+    log_queue = queue.Queue()
+    with running_tasks_lock:
+        running_tasks[execution_id] = {
+            'queue': log_queue,
+            'task_id': 0,
+            'task_name': '临时命令',
+            'started_at': started_at,
+            'finished': False
+        }
+    
+    output_lines = []
+    error_lines = []
+    exit_code = 0
+    
     try:
-        # 在bash环境中执行命令
-        result = subprocess.run(
+        # 使用Popen实时读取输出
+        process = subprocess.Popen(
             command,
             shell=True,
             executable='/bin/bash',
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=3600  # 1小时超时
+            bufsize=1  # 行缓冲
         )
         
-        output = result.stdout
-        error = result.stderr
-        exit_code = result.returncode
+        # 存储进程对象
+        with running_processes_lock:
+            running_processes[execution_id] = process
         
-    except subprocess.TimeoutExpired:
-        output = ''
-        error = '任务执行超时（1小时）'
-        exit_code = -1
+        # 发送开始消息
+        log_queue.put({
+            'type': 'start',
+            'task_name': '临时命令',
+            'command': command,
+            'started_at': started_at.strftime('%Y-%m-%d %H:%M:%S')
+        })
+        
+        # 创建线程读取stdout和stderr
+        def read_output(pipe, is_stderr=False):
+            for line in iter(pipe.readline, ''):
+                if not line:
+                    break
+                line = line.rstrip('\n')
+                if is_stderr:
+                    error_lines.append(line)
+                else:
+                    output_lines.append(line)
+                
+                # 推送实时日志
+                log_queue.put({
+                    'type': 'log',
+                    'data': line,
+                    'is_stderr': is_stderr
+                })
+            pipe.close()
+        
+        stdout_thread = threading.Thread(target=read_output, args=(process.stdout, False))
+        stderr_thread = threading.Thread(target=read_output, args=(process.stderr, True))
+        
+        stdout_thread.start()
+        stderr_thread.start()
+        
+        # 等待进程完成（使用配置的超时时间）
+        timeout_seconds = get_task_timeout()
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            timeout_hours = timeout_seconds / 3600
+            if timeout_hours >= 1:
+                timeout_msg = f'命令执行超时（{timeout_hours:.1f}小时）' if timeout_hours != int(timeout_hours) else f'命令执行超时（{int(timeout_hours)}小时）'
+            else:
+                timeout_msg = f'命令执行超时（{timeout_seconds}秒）'
+            error_lines.append(timeout_msg)
+            exit_code = -1
+        
+        # 等待读取线程完成
+        stdout_thread.join()
+        stderr_thread.join()
+        
     except Exception as e:
-        output = ''
-        error = f'执行异常: {str(e)}'
+        error_lines.append(f'执行异常: {str(e)}')
         exit_code = -1
     
     finished_at = datetime.now()
+    
+    # 发送完成消息
+    log_queue.put({
+        'type': 'finish',
+        'exit_code': exit_code,
+        'finished_at': finished_at.strftime('%Y-%m-%d %H:%M:%S'),
+        'log_id': None  # 临时命令不保存到数据库
+    })
+    
+    # 标记任务完成
+    with running_tasks_lock:
+        if execution_id in running_tasks:
+            running_tasks[execution_id]['finished'] = True
+    
+    # 清理进程对象
+    with running_processes_lock:
+        if execution_id in running_processes:
+            del running_processes[execution_id]
+    
+    logger.info(f"临时命令执行完成，退出码: {exit_code}")
+
+
+def execute_task(task_id, task_name, command, execution_id=None):
+    """执行任务"""
+    started_at = datetime.now()
+    
+    # 如果有execution_id，说明是手动执行，需要实时推送日志
+    log_queue = None
+    if execution_id:
+        log_queue = queue.Queue()
+        with running_tasks_lock:
+            running_tasks[execution_id] = {
+                'queue': log_queue,
+                'task_id': task_id,
+                'task_name': task_name,
+                'started_at': started_at,
+                'finished': False
+            }
+    
+    output_lines = []
+    error_lines = []
+    exit_code = 0
+    
+    try:
+        # 使用Popen实时读取输出
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            executable='/bin/bash',
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1  # 行缓冲
+        )
+        
+        # 存储进程对象（如果有execution_id）
+        if execution_id:
+            with running_processes_lock:
+                running_processes[execution_id] = process
+        
+        # 发送开始消息
+        if log_queue:
+            log_queue.put({
+                'type': 'start',
+                'task_name': task_name,
+                'command': command,
+                'started_at': started_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        # 创建线程读取stdout和stderr
+        def read_output(pipe, is_stderr=False):
+            for line in iter(pipe.readline, ''):
+                if not line:
+                    break
+                line = line.rstrip('\n')
+                if is_stderr:
+                    error_lines.append(line)
+                else:
+                    output_lines.append(line)
+                
+                # 推送实时日志
+                if log_queue:
+                    log_queue.put({
+                        'type': 'log',
+                        'data': line,
+                        'is_stderr': is_stderr
+                    })
+            pipe.close()
+        
+        stdout_thread = threading.Thread(target=read_output, args=(process.stdout, False))
+        stderr_thread = threading.Thread(target=read_output, args=(process.stderr, True))
+        
+        stdout_thread.start()
+        stderr_thread.start()
+        
+        # 等待进程完成（使用配置的超时时间）
+        timeout_seconds = get_task_timeout()
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            timeout_hours = timeout_seconds / 3600
+            if timeout_hours >= 1:
+                timeout_msg = f'任务执行超时（{timeout_hours:.1f}小时）' if timeout_hours != int(timeout_hours) else f'任务执行超时（{int(timeout_hours)}小时）'
+            else:
+                timeout_msg = f'任务执行超时（{timeout_seconds}秒）'
+            error_lines.append(timeout_msg)
+            exit_code = -1
+        
+        # 等待读取线程完成
+        stdout_thread.join()
+        stderr_thread.join()
+        
+    except Exception as e:
+        error_lines.append(f'执行异常: {str(e)}')
+        exit_code = -1
+    
+    finished_at = datetime.now()
+    
+    output = '\n'.join(output_lines)
+    error = '\n'.join(error_lines)
     
     # 记录日志到数据库
     conn = sqlite3.connect(LOGS_DB_PATH)
@@ -146,7 +368,27 @@ def execute_task(task_id, task_name, command):
     ''', (task_id, task_name, command, output, error, exit_code, 
           started_at.strftime('%Y-%m-%d %H:%M:%S'), finished_at.strftime('%Y-%m-%d %H:%M:%S')))
     conn.commit()
+    log_id = cursor.lastrowid
     conn.close()
+    
+    # 发送完成消息
+    if log_queue:
+        log_queue.put({
+            'type': 'finish',
+            'exit_code': exit_code,
+            'finished_at': finished_at.strftime('%Y-%m-%d %H:%M:%S'),
+            'log_id': log_id
+        })
+        
+        # 标记任务完成
+        with running_tasks_lock:
+            if execution_id in running_tasks:
+                running_tasks[execution_id]['finished'] = True
+        
+        # 清理进程对象
+        with running_processes_lock:
+            if execution_id in running_processes:
+                del running_processes[execution_id]
     
     logger.info(f"任务 '{task_name}' 执行完成，退出码: {exit_code}")
 
@@ -163,8 +405,8 @@ def add_job_to_scheduler(task):
     
     try:
         if schedule_type == 'cron':
-            # Cron表达式
-            trigger = CronTrigger.from_crontab(config['expression'])
+            # Cron表达式（指定时区）
+            trigger = CronTrigger.from_crontab(config['expression'], timezone=timezone)
             scheduler.add_job(
                 execute_task,
                 trigger=trigger,
@@ -174,7 +416,7 @@ def add_job_to_scheduler(task):
             )
         elif schedule_type == 'interval':
             # 间隔循环
-            trigger = IntervalTrigger(seconds=config['seconds'])
+            trigger = IntervalTrigger(seconds=config['seconds'], timezone=timezone)
             scheduler.add_job(
                 execute_task,
                 trigger=trigger,
@@ -183,10 +425,10 @@ def add_job_to_scheduler(task):
                 replace_existing=True
             )
         elif schedule_type == 'daily':
-            # 每天定时
+            # 每天定时（指定时区）
             hour = config['hour']
             minute = config['minute']
-            trigger = CronTrigger(hour=hour, minute=minute)
+            trigger = CronTrigger(hour=hour, minute=minute, timezone=timezone)
             scheduler.add_job(
                 execute_task,
                 trigger=trigger,
@@ -197,7 +439,7 @@ def add_job_to_scheduler(task):
         
         logger.info(f"任务 '{name}' 已添加到调度器")
     except Exception as e:
-        logger.error(f"添加任务失败: {str(e)}")
+        logger.error(f"添加任务 '{name}' 失败: {str(e)}")
 
 
 def load_tasks():
@@ -253,10 +495,15 @@ def get_tasks():
         if task[5]:  # 如果任务已启用
             try:
                 job = scheduler.get_job(f'task_{task_id}')
-                if job and job.next_run_time:
-                    next_run_time = job.next_run_time.strftime('%Y-%m-%d %H:%M:%S')
-            except:
-                pass
+                if job:
+                    if job.next_run_time:
+                        next_run_time = job.next_run_time.strftime('%Y-%m-%d %H:%M:%S')
+                    else:
+                        logger.warning(f"任务 {task_id} ({task[1]}) 的 next_run_time 为 None")
+                else:
+                    logger.warning(f"任务 {task_id} ({task[1]}) 未在调度器中找到")
+            except Exception as e:
+                logger.error(f"获取任务 {task_id} ({task[1]}) 的下次运行时间失败: {str(e)}")
         
         result.append({
             'id': task_id,
@@ -379,14 +626,89 @@ def run_task(task_id):
     
     name, command = task
     
-    # 异步执行任务
-    scheduler.add_job(
-        execute_task,
-        args=[task_id, name, command],
-        id=f'manual_{task_id}_{datetime.now().timestamp()}'
-    )
+    # 生成唯一的执行ID
+    execution_id = f'exec_{task_id}_{int(datetime.now().timestamp() * 1000)}'
     
-    return jsonify({'message': '任务已提交执行'})
+    # 在新线程中异步执行任务
+    thread = threading.Thread(
+        target=execute_task,
+        args=(task_id, name, command, execution_id)
+    )
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        'message': '任务已提交执行',
+        'execution_id': execution_id
+    })
+
+
+@app.route('/api/tasks/<execution_id>/stream', methods=['GET'])
+def stream_task_logs(execution_id):
+    """SSE流式推送任务执行日志"""
+    def generate():
+        # 等待任务启动（最多5秒）
+        wait_time = 0
+        while wait_time < 5:
+            with running_tasks_lock:
+                if execution_id in running_tasks:
+                    break
+            time.sleep(0.1)
+            wait_time += 0.1
+        
+        with running_tasks_lock:
+            if execution_id not in running_tasks:
+                yield f"data: {json.dumps({'type': 'error', 'message': '任务不存在或已结束'})}\n\n"
+                return
+            
+            log_queue = running_tasks[execution_id]['queue']
+        
+        # 持续推送日志
+        timeout_counter = 0
+        while True:
+            try:
+                # 使用超时来定期检查任务是否完成
+                msg = log_queue.get(timeout=1)
+                timeout_counter = 0
+                
+                # 发送日志消息
+                yield f"data: {json.dumps(msg)}\n\n"
+                
+                # 如果是结束消息，退出循环
+                if msg.get('type') == 'finish':
+                    break
+                    
+            except queue.Empty:
+                # 队列为空，发送心跳
+                timeout_counter += 1
+                
+                # 检查任务是否已完成
+                with running_tasks_lock:
+                    if execution_id in running_tasks and running_tasks[execution_id]['finished']:
+                        break
+                
+                # 如果超过60秒没有新消息且任务未在运行列表中，断开连接
+                if timeout_counter > 60:
+                    with running_tasks_lock:
+                        if execution_id not in running_tasks:
+                            break
+                
+                # 发送心跳保持连接
+                yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+        
+        # 清理
+        with running_tasks_lock:
+            if execution_id in running_tasks:
+                del running_tasks[execution_id]
+    
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        }
+    )
 
 
 @app.route('/api/logs', methods=['GET'])
@@ -499,6 +821,146 @@ def set_view_mode():
     conn.close()
     
     return jsonify({'message': '视图模式已保存', 'view_mode': view_mode})
+
+
+@app.route('/api/settings/show_realtime_log', methods=['GET'])
+def get_show_realtime_log():
+    """获取实时日志显示设置"""
+    conn = sqlite3.connect(TASKS_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT value FROM settings WHERE key = ?', ('show_realtime_log',))
+    result = cursor.fetchone()
+    conn.close()
+    
+    show_realtime_log = result[0] if result else '1'
+    return jsonify({'show_realtime_log': show_realtime_log == '1'})
+
+
+@app.route('/api/settings/show_realtime_log', methods=['POST'])
+def set_show_realtime_log():
+    """设置实时日志显示"""
+    data = request.json
+    show_realtime_log = data.get('show_realtime_log', True)
+    
+    conn = sqlite3.connect(TASKS_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO settings (key, value, updated_at)
+        VALUES ('show_realtime_log', ?, CURRENT_TIMESTAMP)
+    ''', ('1' if show_realtime_log else '0',))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': '实时日志显示设置已保存', 'show_realtime_log': show_realtime_log})
+
+
+@app.route('/api/settings/task_timeout', methods=['GET'])
+def get_task_timeout_setting():
+    """获取任务超时时间设置"""
+    conn = sqlite3.connect(TASKS_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('SELECT value FROM settings WHERE key = ?', ('task_timeout',))
+    result = cursor.fetchone()
+    conn.close()
+    
+    task_timeout = int(result[0]) if result else 3600
+    return jsonify({'task_timeout': task_timeout})
+
+
+@app.route('/api/settings/task_timeout', methods=['POST'])
+def set_task_timeout_setting():
+    """设置任务超时时间"""
+    data = request.json
+    task_timeout = data.get('task_timeout', 3600)
+    
+    # 验证超时时间（至少60秒，最多24小时）
+    try:
+        task_timeout = int(task_timeout)
+        if task_timeout < 60:
+            return jsonify({'error': '超时时间不能小于60秒'}), 400
+        if task_timeout > 86400:
+            return jsonify({'error': '超时时间不能大于24小时（86400秒）'}), 400
+    except ValueError:
+        return jsonify({'error': '无效的超时时间'}), 400
+    
+    conn = sqlite3.connect(TASKS_DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT OR REPLACE INTO settings (key, value, updated_at)
+        VALUES ('task_timeout', ?, CURRENT_TIMESTAMP)
+    ''', (str(task_timeout),))
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': '超时时间已保存', 'task_timeout': task_timeout})
+
+
+@app.route('/api/running_tasks', methods=['GET'])
+def get_running_tasks():
+    """获取当前运行中的任务列表"""
+    running_list = []
+    
+    with running_tasks_lock:
+        for execution_id, task_info in running_tasks.items():
+            if not task_info.get('finished', False):
+                # 计算运行时长
+                started_at = task_info['started_at']
+                elapsed = (datetime.now() - started_at).total_seconds()
+                
+                running_list.append({
+                    'execution_id': execution_id,
+                    'task_id': task_info['task_id'],
+                    'task_name': task_info['task_name'],
+                    'started_at': started_at.strftime('%Y-%m-%d %H:%M:%S'),
+                    'elapsed_seconds': int(elapsed)
+                })
+    
+    return jsonify(running_list)
+
+
+@app.route('/api/running_tasks/<execution_id>/kill', methods=['POST'])
+def kill_running_task(execution_id):
+    """强制终止运行中的任务"""
+    with running_processes_lock:
+        if execution_id not in running_processes:
+            return jsonify({'error': '任务不存在或已结束'}), 404
+        
+        process = running_processes[execution_id]
+        
+        try:
+            # 强制终止进程
+            process.kill()
+            logger.info(f"强制终止任务: {execution_id}")
+            return jsonify({'message': '任务已终止', 'execution_id': execution_id})
+        except Exception as e:
+            logger.error(f"终止任务失败: {str(e)}")
+            return jsonify({'error': f'终止失败: {str(e)}'}), 500
+
+
+@app.route('/api/commands/run', methods=['POST'])
+def run_command():
+    """直接执行命令（临时执行，不创建任务）"""
+    data = request.json
+    command = data.get('command', '').strip()
+    
+    if not command:
+        return jsonify({'error': '命令不能为空'}), 400
+    
+    # 生成唯一的执行ID
+    execution_id = f'cmd_{int(datetime.now().timestamp() * 1000)}'
+    
+    # 在新线程中异步执行命令（不记录到数据库）
+    thread = threading.Thread(
+        target=execute_command_temp,
+        args=(command, execution_id)
+    )
+    thread.daemon = True
+    thread.start()
+    
+    return jsonify({
+        'message': '命令已提交执行',
+        'execution_id': execution_id
+    })
 
 
 @app.route('/log/<int:log_id>')
