@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-轻量级定时任务服务
+朱雀
 使用Flask + APScheduler实现，资源占用极低
 """
 
@@ -10,7 +10,7 @@ import sqlite3
 import subprocess
 import json
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context, session, redirect, url_for
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -19,6 +19,10 @@ import pytz
 import threading
 import queue
 import time
+from auth_middleware import (
+    init_auth_db, register_user, authenticate_user, get_user_info,
+    get_auth_settings, get_all_users, delete_user, change_password
+)
 
 # 配置
 TASKS_DB_PATH = 'tasks.db'
@@ -31,6 +35,8 @@ TIMEZONE = os.environ.get('TIMEZONE', 'Asia/Shanghai')  # 默认时区：上海�
 # 创建Flask应用
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
+app.config['TASKS_DB_PATH'] = TASKS_DB_PATH
+app.secret_key = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 
 # 配置日志
 logging.basicConfig(level=logging.INFO)
@@ -127,6 +133,9 @@ def init_db():
     
     conn_logs.commit()
     conn_logs.close()
+    
+    # 初始化认证数据库
+    init_auth_db(TASKS_DB_PATH)
 
 
 def get_task_timeout():
@@ -458,6 +467,49 @@ def load_tasks():
         add_job_to_scheduler(task)
 
 
+# ==================== 认证拦截器 ====================
+# 使用 before_request 钩子统一处理认证，避免在每个路由上重复添加装饰器
+
+@app.before_request
+def check_authentication():
+    """
+    统一的认证检查 - 在所有请求之前执行
+    
+    优点：
+    1. 集中管理认证逻辑，代码更简洁
+    2. 无需在每个路由上添加 @login_required 装饰器
+    3. 通过白名单灵活控制哪些路由不需要认证
+    4. 根据配置动态决定是否需要登录验证
+    """
+    # 白名单：不需要登录的路由
+    whitelist = [
+        '/login',                # 登录页面
+        '/api/auth/login',       # 登录 API
+        '/api/auth/register',    # 注册 API
+        '/api/auth/settings',    # 获取认证设置（用于登录页判断是否允许注册）
+        '/static/'               # 静态资源（CSS、JS、图片等）
+    ]
+    
+    # 检查当前路径是否在白名单中
+    for path in whitelist:
+        if request.path.startswith(path):
+            return None  # 返回 None 表示继续处理请求
+    
+    # 检查是否需要登录验证（从数据库配置读取）
+    settings = get_auth_settings(TASKS_DB_PATH)
+    if not settings['require_login']:
+        # 不需要登录验证，直接放行
+        return None
+    
+    # 需要登录但用户未登录
+    if 'user_id' not in session:
+        # API 请求返回 JSON 错误
+        if request.path.startswith('/api/'):
+            return jsonify({'error': '请先登录', 'require_login': True}), 401
+        # 页面请求重定向到登录页
+        return redirect(url_for('login_page'))
+
+
 @app.route('/')
 def index():
     """主页"""
@@ -469,7 +521,13 @@ def index():
     conn.close()
     
     view_mode = result[0] if result else 'list'
-    return render_template('index.html', view_mode=view_mode)
+    
+    # 获取当前用户信息
+    user_info = None
+    if 'user_id' in session:
+        user_info = get_user_info(TASKS_DB_PATH, session['user_id'])
+    
+    return render_template('index.html', view_mode=view_mode, user_info=user_info)
 
 
 @app.route('/api/tasks', methods=['GET'])
@@ -876,10 +934,6 @@ def set_task_timeout_setting():
     # 验证超时时间（至少60秒，最多24小时）
     try:
         task_timeout = int(task_timeout)
-        if task_timeout < 60:
-            return jsonify({'error': '超时时间不能小于60秒'}), 400
-        if task_timeout > 86400:
-            return jsonify({'error': '超时时间不能大于24小时（86400秒）'}), 400
     except ValueError:
         return jsonify({'error': '无效的超时时间'}), 400
     
@@ -1014,6 +1068,141 @@ def log_detail(log_id):
     return render_template('log_detail.html', log=log_data, duration=duration_str)
 
 
+# ==================== 认证相关路由 ====================
+
+@app.route('/login')
+def login_page():
+    """登录页面"""
+    # 如果已登录，重定向到首页
+    if 'user_id' in session:
+        return redirect(url_for('index'))
+    return render_template('login.html')
+
+
+@app.route('/api/auth/register', methods=['POST'])
+def api_register():
+    """用户注册"""
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    
+    success, result = register_user(TASKS_DB_PATH, username, password)
+    
+    if success:
+        return jsonify({'message': '注册成功', 'user_id': result})
+    else:
+        return jsonify({'error': result}), 400
+
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    """用户登录"""
+    data = request.json
+    username = data.get('username', '').strip()
+    password = data.get('password', '')
+    
+    success, result = authenticate_user(TASKS_DB_PATH, username, password)
+    
+    if success:
+        session['user_id'] = result
+        session['username'] = username
+        user_info = get_user_info(TASKS_DB_PATH, result)
+        return jsonify({'message': '登录成功', 'user': user_info})
+    else:
+        return jsonify({'error': result}), 401
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+def api_logout():
+    """用户登出"""
+    session.clear()
+    return jsonify({'message': '已登出'})
+
+
+@app.route('/api/auth/current', methods=['GET'])
+def api_current_user():
+    """获取当前用户信息"""
+    if 'user_id' not in session:
+        return jsonify({'error': '未登录'}), 401
+    
+    user_info = get_user_info(TASKS_DB_PATH, session['user_id'])
+    if user_info:
+        return jsonify(user_info)
+    else:
+        return jsonify({'error': '用户不存在'}), 404
+
+
+@app.route('/api/auth/settings', methods=['GET'])
+def api_get_auth_settings():
+    """获取认证设置"""
+    settings = get_auth_settings(TASKS_DB_PATH)
+    return jsonify(settings)
+
+
+@app.route('/api/auth/settings', methods=['POST'])
+def api_set_auth_settings():
+    """设置认证选项"""
+    data = request.json
+    
+    conn = sqlite3.connect(TASKS_DB_PATH)
+    cursor = conn.cursor()
+    
+    if 'allow_registration' in data:
+        value = '1' if data['allow_registration'] else '0'
+        cursor.execute('''
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES ('allow_registration', ?, CURRENT_TIMESTAMP)
+        ''', (value,))
+    
+    if 'require_login' in data:
+        value = '1' if data['require_login'] else '0'
+        cursor.execute('''
+            INSERT OR REPLACE INTO settings (key, value, updated_at)
+            VALUES ('require_login', ?, CURRENT_TIMESTAMP)
+        ''', (value,))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({'message': '设置已保存'})
+
+
+@app.route('/api/auth/users', methods=['GET'])
+def api_get_users():
+    """获取所有用户列表"""
+    users = get_all_users(TASKS_DB_PATH)
+    return jsonify(users)
+
+
+@app.route('/api/auth/users/<int:user_id>', methods=['DELETE'])
+def api_delete_user(user_id):
+    """删除用户"""
+    # 不能删除自己
+    if user_id == session.get('user_id'):
+        return jsonify({'error': '不能删除当前登录用户'}), 400
+    
+    if delete_user(TASKS_DB_PATH, user_id):
+        return jsonify({'message': '用户已删除'})
+    else:
+        return jsonify({'error': '删除失败'}), 404
+
+
+@app.route('/api/auth/change_password', methods=['POST'])
+def api_change_password():
+    """修改密码"""
+    data = request.json
+    old_password = data.get('old_password', '')
+    new_password = data.get('new_password', '')
+    
+    user_id = session.get('user_id')
+    success, message = change_password(TASKS_DB_PATH, user_id, old_password, new_password)
+    
+    if success:
+        return jsonify({'message': message})
+    else:
+        return jsonify({'error': message}), 400
+
+
 if __name__ == '__main__':
     # 初始化数据库
     init_db()
@@ -1022,6 +1211,6 @@ if __name__ == '__main__':
     load_tasks()
     
     # 启动Flask应用
-    logger.info("轻量级定时任务服务启动...")
+    logger.info("朱雀启动...")
     app.run(host='0.0.0.0', port=5000, debug=False)
 
