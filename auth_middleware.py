@@ -8,8 +8,7 @@
 import hashlib
 import os
 import sqlite3
-from functools import wraps
-from flask import session, request, redirect, url_for, jsonify
+# 移除未使用的导入
 
 
 def hash_password(password, salt=None):
@@ -218,13 +217,5 @@ def change_password(db_path, user_id, old_password, new_password):
     return True, '密码修改成功'
 
 
-class AuthMiddleware:
-    """认证中间件"""
-    def __init__(self, app, db_path):
-        self.app = app
-        self.db_path = db_path
-        
-    def __call__(self, environ, start_response):
-        """WSGI 中间件调用"""
-        return self.app(environ, start_response)
+# AuthMiddleware 类已删除 - 未被使用
 

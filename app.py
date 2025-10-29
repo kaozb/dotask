@@ -1035,7 +1035,7 @@ def log_detail(log_id):
         return '日志不存在', 404
     
     # 计算执行时长
-    from datetime import datetime
+    # datetime 已在文件顶部导入
     started_at = datetime.strptime(log[7], '%Y-%m-%d %H:%M:%S')
     finished_at = datetime.strptime(log[8], '%Y-%m-%d %H:%M:%S')
     duration = finished_at - started_at
